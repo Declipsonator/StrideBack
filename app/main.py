@@ -6,6 +6,10 @@ __license__ = "GNU General Public License v3.0"
 from fastapi import FastAPI
 import app.routers.users.account_access as account_access
 import app.routers.users.account as account
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI()
 
