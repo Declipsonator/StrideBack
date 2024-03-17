@@ -16,7 +16,8 @@ The backend for a high school NY running website. This is an api that is built i
 
 ## Todo
 - [x] Simple login/registration system with JWT tokens
-- [ ] Email verification and password reset
+- [x] Account verification and password reset
+- [ ] Email system
 - [ ] Public profiles with bio
 - [ ] Post system
 - [ ] Comment system
