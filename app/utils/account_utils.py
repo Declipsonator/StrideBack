@@ -1,6 +1,11 @@
-__author__ = "Declipsonator"
-__copyright__ = "Copyright (C) 2024 Declipsonator"
-__license__ = "GNU General Public License v3.0"
+#  LICENSE: GNU General Public License v3.0
+#  Copyright (c) 2024 Declipsonator
+#
+#  This software can be freely copied, modified, and distributed under the GPLv3
+#  license, but requires inclusion of license and copyright notices, and users bear the
+#  risk of open-sourcing the codebase if used for business purposes, while
+#  modifications must be indicated and distributed under the same license, with no
+#  warranties provided and no liability for damages on the part of the author or license.
 
 import os
 from typing import Annotated
@@ -27,6 +32,12 @@ class UserInDB(BaseModel):
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db=Depends(get_db)):
+    """
+    Fetches the current user from the database using the provided token.
+    :param token: The token to use to fetch the user.
+    :param db: The database connection object.
+    :return: The user object of the currently logged-in user.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -62,25 +73,15 @@ async def get_user(db, username: str):
         return user
 
 
-async def send_email(email: str, subject: str, message: str):
-    """
-    Sends an email to the provided email address.
-
-    Args:
-        email (str): The email address to send the email to.
-        subject (str): The subject of the email.
-        message (str): The message body of the email.
-
-    Returns:
-        bool: True if the email is sent successfully, else False.
-    """
-    # Send email
-    print(f"Email sent to {email} with subject: {subject} and message: {message}")
-
-    return True
-
-
 def check_password_security(password: str):
+    """
+    Checks the security of the provided password.
+
+    :param password: The password to check.
+
+    :return: Returns a list containing a boolean indicating whether the password
+    is secure and a message indicating the reason if it is not secure.
+    """
     # needs at least 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special character
     valid_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+.-')
     special_chars = set('!@#$%^&*()_+')
@@ -100,24 +101,48 @@ def check_password_security(password: str):
 
 
 async def check_email_security(email: str):
-    # return [True, "Email is secure"]
+    """
+    Checks the security of the provided email address.
 
-    # https://github.com/JoshData/python-email-validator seems like the best option, waiting for async to be added
-    # which I have reason to believe is in the works
+    :param email: The email address to check.
+
+    :return: Returns a list containing a boolean indicating whether the
+    email is secure and a message indicating the reason if it is not secure.
+    """
 
     check = is_email(email, check_dns=True, diagnose=True, allow_gtld=False)
 
-    if not check:
-        return [False, "Invalid email address"]
+    if check.code == 0:
+        return [True, "Email is secure"]
 
-    return [True, "Email is secure"]
+    return [False, "Invalid email address"]
 
 
 def check_username_security(username: str):
-    # needs at least 4 characters, no special characters, only ASCII
+    """
+    Checks the username viability.
+
+    :param username: The username to check.
+
+    :return: Returns a list containing a
+    boolean indicating whether the username is secure and a message indicating the reason if it is not secure.
+    """
+
     valid_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._')
     if len(username) < 4:
         return [False, "Username must be at least 4 characters long"]
     if not all(char in valid_chars for char in username):
         return [False, "Username may contain only the following characters: a-z, A-Z, 0-9, ._"]
     return [True, "Username is secure"]
+
+
+def check_if_email(string: str):
+    """
+    Checks if the provided string is an email address.
+
+    :param string: The string to check.
+
+    :return: Returns a boolean indicating whether the string is an email address.
+    """
+
+    return is_email(string).code == 0

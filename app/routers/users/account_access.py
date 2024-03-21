@@ -1,6 +1,11 @@
-__author__ = "Declipsonator"
-__copyright__ = "Copyright (C) 2024 Declipsonator"
-__license__ = "GNU General Public License v3.0"
+#  LICENSE: GNU General Public License v3.0
+#  Copyright (c) 2024 Declipsonator
+#
+#  This software can be freely copied, modified, and distributed under the GPLv3
+#  license, but requires inclusion of license and copyright notices, and users bear the
+#  risk of open-sourcing the codebase if used for business purposes, while
+#  modifications must be indicated and distributed under the same license, with no
+#  warranties provided and no liability for damages on the part of the author or license.
 
 import os
 from datetime import datetime, timedelta, timezone
@@ -13,7 +18,7 @@ from jose import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-from app.utils import account_utils
+from app.utils import account_utils, comm_utils
 from app.utils.account_utils import UserInDB
 from app.utils.mongo_utils import get_db
 
@@ -34,11 +39,13 @@ unconfirmed_users = {}
 password_reset_codes = {}
 
 
+# Define Token model
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 
+# Function to create access token for OAuth2
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
@@ -50,6 +57,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return encoded_jwt
 
 
+# Login model
 class UserLogin(BaseModel):
     username: str
     hashed_password: str
@@ -67,7 +75,10 @@ async def get_user_login(db, username: str):
     Returns:
         UserLogin: The fetched user login object if found, else None.
     """
-    user_login = await db['user_logins'].find_one({"username": username})
+    if account_utils.is_email(username):
+        user_login = await db['user_logins'].find_one({"email": username})
+    else:
+        user_login = await db['user_logins'].find_one({"username": username})
     if not user_login:
         return None
     return UserLogin(**user_login)
@@ -85,6 +96,10 @@ async def authenticate_user(db, username: str, password: str):
     Returns:
         UserInDB: The authenticated user object if authentication is successful, else False.
     """
+    if account_utils.is_email(username):
+        user = await db['user_logins'].find_one({"email": username})
+        if not user:
+            return False
     user = await get_user_login(db, username)
     if not user:
         return False
@@ -173,14 +188,17 @@ async def create_user(user: UserRegistration, db=Depends(get_db)):
     unconfirmed_users[confirm_code] = user_in_db
 
     # send email with confirmation code
-    await account_utils.send_email(user.email, "Account Confirmation",
-                                   f"Your confirmation code is {confirm_code}, it will expire in 15 minutes.")
+    await comm_utils.send_fancy_email(user.email, "Account Confirmation",
+                                      "Account Confirmation",
+                                      f"Click the link to confirm your account: "
+                                      f"{os.environ['CONFIRM_EMAIL_URL'].format(code=confirm_code)}",
+                                      "This link will expire in 15 minutes.")
 
     # return success
     return {"status": "success"}
 
 
-@router.get("/users/confirm/{code}")
+@router.get("/users/confirm-email/{code}")
 async def confirm_user(code: str, db=Depends(get_db)):
     """
     Endpoint for user confirmation. Confirms the user registration.
@@ -194,9 +212,13 @@ async def confirm_user(code: str, db=Depends(get_db)):
 
     """
 
+    to_remove = []
     for key, value in unconfirmed_users.items():
         if datetime.now() - datetime.fromisoformat(value['creation_date']) > timedelta(minutes=15):
-            unconfirmed_users.pop(key)
+            to_remove.append(key)
+
+    for key in to_remove:
+        unconfirmed_users.pop(key)
 
     if code in unconfirmed_users:
         user_in_db = unconfirmed_users.pop(code)
@@ -210,7 +232,7 @@ async def confirm_user(code: str, db=Depends(get_db)):
     return {"status": "failure"}
 
 
-@router.get("/users/password/reset/{username}")
+@router.get("/users/reset-password/")
 async def reset_password(username: str, db=Depends(get_db)):
     """
     Endpoint for user password reset. Sends a password reset email to the user.
@@ -226,19 +248,27 @@ async def reset_password(username: str, db=Depends(get_db)):
 
     user = await get_user_login(db, username)
     if not user:
-        return {"status": "failure", "detail": "User not found"}
+        if os.environ['DEVELOPMENT'].lower() == 'true':
+            return {"status": "failure", "detail": "User not found"}
+        else:
+            # While it may be helpful to return a detailed error message in development,
+            # it is not recommended in production to avoid leaking information about the existence of users.
+            return {"status": "success"}
 
     user = user.dict()
     user['creation_date'] = str(datetime.now().isoformat())
     reset_code = str(uuid4())
     password_reset_codes[reset_code] = user
-    await account_utils.send_email(user["email"], "Password Reset",
-                                   f"Your password reset code is {reset_code}, it will expire in 15 minutes.")
+    await comm_utils.send_fancy_email(user["email"], "Password Reset",
+                                      "Password Reset",
+                                      f"Click the link to reset your password for \"{user["username"]}\": "
+                                      f"{os.environ["RESET_PASSWORD_URL"].format(code=reset_code)} (Does not work yet)",
+                                      "This link will expire in 15 minutes.")
 
     return {"status": "success"}
 
 
-@router.post("/users/password/reset/{code}")
+@router.post("/users/reset-password/{code}")
 async def reset_password_final(code: str, new_password: str, db=Depends(get_db)):
     """
     Endpoint for user password reset. Resets the password for the user.
@@ -253,9 +283,13 @@ async def reset_password_final(code: str, new_password: str, db=Depends(get_db))
 
     """
 
+    to_remove = []
     for key, value in password_reset_codes.items():
         if datetime.now() - datetime.fromisoformat(value['creation_date']) > timedelta(minutes=15):
-            password_reset_codes.pop(key)
+            to_remove.append(key)
+
+    for key in to_remove:
+        password_reset_codes.pop(key)
 
     if code in password_reset_codes:
         result, reason = account_utils.check_password_security(new_password)
@@ -264,12 +298,38 @@ async def reset_password_final(code: str, new_password: str, db=Depends(get_db))
         user = password_reset_codes.pop(code)
         hashed_password = pwd_context.hash(new_password)
         # check if user used email to log in
-        if await db['user_logins'].find_one({"username": user["username"]}):
-            await db['user_logins'].find_one_and_update({"username": user["username"]},
-                                                        {"$set": {"hashed_password": hashed_password}})
-        elif await db['user_logins'].find_one({"email": user["username"]}):
-            await db['user_logins'].find_one_and_update({"email": user["email"]},
-                                                        {"$set": {"hashed_password": hashed_password}})
+        await db['user_logins'].find_one_and_update({"username": user["username"]},
+                                                    {"$set": {"hashed_password": hashed_password}})
+
         return {"status": "success"}
 
     return {"status": "failure"}
+
+
+@router.get("/users/reset-password/valid/{code}")
+async def check_reset_code(code: str):
+    """
+    Endpoint for checking the validity of a password reset code.
+
+    Args:
+        code (str): The reset code to check the validity of.
+
+    Returns:
+        dict: A dictionary containing the status of the reset code.
+
+    """
+
+    to_remove = []
+
+    for key, value in password_reset_codes.items():
+        if datetime.now() - datetime.fromisoformat(value['creation_date']) > timedelta(minutes=15):
+            to_remove.append(key)
+
+    for key in to_remove:
+        password_reset_codes.pop(key)
+
+    if code in password_reset_codes:
+        return {"status": "success", "detail": "Code is valid"}
+
+    return {"status": "failure", "detail": "Code is invalid"}
+
