@@ -225,6 +225,9 @@ async def confirm_user(code: str, db=Depends(get_db)):
         user_login = {"username": user_in_db["username"], "hashed_password": user_in_db["password"],
                       "email": user_in_db["email"]}
         del user_in_db['password']
+        user_in_db['profile_picture'] = ("https://www.iprcenter.gov/image-repository/blank-profile-picture.png"
+                                         "/@@images/image.png")
+        user_in_db['bio'] = ""
         await db['users'].insert_one(user_in_db)
         await db['user_logins'].insert_one(user_login)
         return {"status": "success"}

@@ -32,7 +32,7 @@ RESET_PASSWORD_URL=http://localhost:8000/users/reset-password/{code}
 - [x] Simple login/registration system with JWT tokens
 - [x] Account verification and password reset
 - [x] Email system
-- [ ] Public profiles with bio
+- [x] Public profiles with bio
 - [ ] Post system
 - [ ] Comment system
 - [ ] Like system
