@@ -173,17 +173,18 @@ async def create_user(user: UserRegistration, db=Depends(get_db)):
         return {"status": "error", "reason": "Email already exists"}
 
     # password security
-    secure, reason = account_utils.check_password_security(user.password)
+    secure, reason = account_utils.check_password_security(user.password).values()
     if not secure:
         return {"status": "error", "reason": reason}
 
     # email security
-    secure, reason = await account_utils.check_email_security(user.email)
+    secure, reason = (await account_utils.check_email_security(user.email)).values()
     if not secure:
         return {"status": "error", "reason": reason}
 
     # username viability
-    secure, reason = account_utils.check_username_security(user.username)
+    secure, reason = account_utils.check_username_security(user.username).values()
+
     if not secure:
         return {"status": "error", "reason": reason}
 
@@ -303,7 +304,7 @@ async def reset_password_final(code: str, new_password: str, db=Depends(get_db))
         password_reset_codes.pop(key)
 
     if code in password_reset_codes:
-        result, reason = account_utils.check_password_security(new_password)
+        result, reason = account_utils.check_password_security(new_password).values()
         if not result:
             return {"status": "error", "reason": reason}
         user = password_reset_codes.pop(code)
