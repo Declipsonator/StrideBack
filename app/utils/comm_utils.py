@@ -44,7 +44,8 @@ async def send_email(email: str, subject: str, message: str):
 
         with smtplib.SMTP_SSL(os.environ["SMTP_HOST"], port, context=context) as server:
             server.login(os.environ['EMAIL'], password)
-            server.sendmail(os.environ['EMAIL'], htmll.escape(email), f"Subject: {htmll.escape(subject)}\n\n{htmll.escape(message)}")
+            server.sendmail(os.environ['EMAIL'], htmll.escape(email),
+                            f"Subject: {htmll.escape(subject)}\n\n{htmll.escape(message)}")
     except Exception as e:
         print(f"Error sending email: {e}")
         return False

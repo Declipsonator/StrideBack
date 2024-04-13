@@ -19,7 +19,6 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.utils import account_utils, comm_utils
-from app.utils.account_utils import UserInDB
 from app.utils.mongo_utils import get_db
 
 # Initialize APIRouter
@@ -94,7 +93,7 @@ async def authenticate_user(db, username: str, password: str):
         password (str): The password of the user to authenticate.
 
     Returns:
-        UserInDB: The authenticated user object if authentication is successful, else False.
+        UserLogin: The authenticated user object if authentication is successful, else False.
     """
     if account_utils.is_email(username):
         user = await db['user_logins'].find_one({"email": username})
@@ -120,6 +119,9 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
     Returns:
         Token: A dictionary containing the access token and token type if login is successful.
+
+    Raises:
+        HTTPException: If the username or password is incorrect.
     """
 
     user = await authenticate_user(db, form_data.username, form_data.password)
@@ -151,7 +153,7 @@ async def create_user(user: UserRegistration, db=Depends(get_db)):
     Endpoint for user registration. Creates a new user in the database.
 
     Args:
-        user (User): The user object containing the username and password of the user to register.
+        user (User): The user object containing the info of the user to register.
         db: The database connection object.
 
     Returns:
@@ -161,24 +163,30 @@ async def create_user(user: UserRegistration, db=Depends(get_db)):
 
     for user_in_db in unconfirmed_users.values():
         if user_in_db['username'] == user.username:
-            return {"status": "failure", "detail": "Username already exists"}
+            return {"status": "error", "reason": "Username already exists"}
         elif user_in_db['email'] == user.email:
-            return {"status": "failure", "detail": "Email already exists"}
+            return {"status": "error", "reason": "Email already exists"}
 
     if await db['users'].find_one({"username": user.username}):
-        return {"status": "failure", "detail": "Username already exists"}
+        return {"status": "error", "reason": "Username already exists"}
     elif await db['users'].find_one({"email": user.email}):
-        return {"status": "failure", "detail": "Email already exists"}
+        return {"status": "error", "reason": "Email already exists"}
 
     # password security
     secure, reason = account_utils.check_password_security(user.password)
     if not secure:
-        return {"status": "failure", "detail": reason}
+        return {"status": "error", "reason": reason}
 
     # email security
     secure, reason = await account_utils.check_email_security(user.email)
     if not secure:
-        return {"status": "failure", "detail": reason}
+        return {"status": "error", "reason": reason}
+
+    # username viability
+    secure, reason = account_utils.check_username_security(user.username)
+    if not secure:
+        return {"status": "error", "reason": reason}
+
     hashed_password = pwd_context.hash(user.password)
     user_in_db = user.dict()
     user_in_db['password'] = hashed_password
@@ -252,7 +260,7 @@ async def reset_password(username: str, db=Depends(get_db)):
     user = await get_user_login(db, username)
     if not user:
         if os.environ['DEVELOPMENT'].lower() == 'true':
-            return {"status": "failure", "detail": "User not found"}
+            return {"status": "error", "reason": "User not found"}
         else:
             # While it may be helpful to return a detailed error message in development,
             # it is not recommended in production to avoid leaking information about the existence of users.
@@ -297,7 +305,7 @@ async def reset_password_final(code: str, new_password: str, db=Depends(get_db))
     if code in password_reset_codes:
         result, reason = account_utils.check_password_security(new_password)
         if not result:
-            return {"status": "failure", "detail": reason}
+            return {"status": "error", "reason": reason}
         user = password_reset_codes.pop(code)
         hashed_password = pwd_context.hash(new_password)
         # check if user used email to log in
@@ -306,7 +314,7 @@ async def reset_password_final(code: str, new_password: str, db=Depends(get_db))
 
         return {"status": "success"}
 
-    return {"status": "failure"}
+    return {"status": "error"}
 
 
 @router.get("/users/reset-password/valid/{code}")
@@ -332,7 +340,7 @@ async def check_reset_code(code: str):
         password_reset_codes.pop(key)
 
     if code in password_reset_codes:
-        return {"status": "success", "detail": "Code is valid"}
+        return {"status": "success"}
 
-    return {"status": "failure", "detail": "Code is invalid"}
+    return {"status": "error", "reason": "Code is invalid"}
 

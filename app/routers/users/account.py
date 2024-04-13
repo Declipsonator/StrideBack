@@ -28,16 +28,13 @@ async def read_users_me(user=Depends(get_current_user)):
     """
     Endpoint to fetch the details of the currently logged-in user.
 
-    Args: user (UserInDB, optional): The user object of the currently logged-in user. Defaults to Depends on
-    get_current_user.
+    Args:
+        user: The user object of the currently logged-in user.
 
     Returns:
-        UserInDB: The user object of the currently logged-in user.
-
-    Raises:
-        HTTPException: If the user is not found.
+        dict: A dictionary of user information.
     """
-    return user
+    return {"status": "success", "username": user.username, "email": user.email, "first_name": user.first_name, "last_name": user.last_name, "creation_date": user.creation_date, "profile_picture": user.profile_picture, "bio": user.bio}
 
 
 @router.post("/users/me/update/profile-picture")
@@ -45,25 +42,23 @@ async def update_profile_picture(profile_picture: str, user=Depends(get_current_
     """
     Endpoint to update the profile picture of the currently logged-in user.
 
-    Args: profile_picture (str):
-        - The new profile picture of the user.
-        - user (UserInDB, optional): The user object of the currently logged-in user. Defaults to Depends on get_current_user.
+    Args:
+        profile_picture (str): The new profile picture of the user.
+        user: The user object of the currently logged-in user.
+        db: The database connection object.
 
 
     Returns:
-        UserInDB: The user object of the currently logged-in user.
-
-    Raises:
-        HTTPException: If the user is not found.
+        dict: A dictionary containing the status of the update.
     """
 
     image_formats = ("image/png", "image/jpeg", "image/jpg")
     r = requests.head(profile_picture)
     if not r.headers.get("content-type", '') in image_formats:
-        return {"error": "Invalid image format. Please provide a valid image URL."}
+        return {"status": "error", "reason": "Invalid image format. Please provide a valid image URL."}
 
-    await db['users'].find_one_and_update({"username": user["username"]},
-                                          {"$set": {"profile_picture": profile_picture}})
+    await user.update_profile_picture(profile_picture)
+
     return {"status": "success."}
 
 
@@ -73,24 +68,21 @@ async def update_bio(bio: str, user=Depends(get_current_user), db=Depends(get_db
     Endpoint to update the profile picture of the currently logged-in user.
 
     Args: profile_picture (str):
-        - The new profile picture of the user.
-        - user (UserInDB, optional): The user object of the currently logged-in user. Defaults to Depends on get_current_user.
-        - db: The database connection object.
+        The new profile picture of the user.
+        user: The user object of the currently logged-in user.
+        db: The database connection object.
 
 
     Returns:
-        UserInDB: The user object of the currently logged-in user.
-
-    Raises:
-        HTTPException: If the user is not found.
+        dict: A dictionary containing the status of the update.
     """
 
     if len(bio) > 500:
-        return {"error": "Bio must be less than 500 characters."}
+        return {"status": "error", "reason": "Bio must be less than 500 characters."}
 
-    await db['users'].find_one_and_update({"username": user["username"]},
-                                          {"$set": {"bio": bio}})
-    return {"status": "success."}
+    await user.update_bio(bio)
+
+    return {"status": "success"}
 
 
 @router.get("/users/view/{username}")
@@ -100,27 +92,24 @@ async def view_user(username: str, user=Depends(get_current_user), db=Depends(ge
 
     Args:
         username (str): The username of the user to view.
-        user (UserInDB, optional): The user object of the currently logged-in user. Defaults to Depends on get_current_user.
+        user: The user object of the currently logged-in user.
         db: The database connection object.
 
     Returns:
-        UserInDB: The user object of the user to view.
-
-    Raises:
-        HTTPException: If the user is not found.
+        dict: A dictionary of user information if the user is found, else an error message.
     """
 
     user = await db['users'].find_one({"username": username})
     if not user:
-        return {"error": "User not found."}
+        return {"status": "error", "reason": "User not found."}
     # Only keep username, profile_picture, creation_date, and bio
     user = {k: v for k, v in user.items() if k in ["username", "profile_picture", "creation_date", "bio"]}
-
+    user["status"] = "success"
     return user
 
 
 @router.post("/users/report/{username}")
-async def report_user(username: str, report_type: ReportType, description: str, user=Depends(get_current_user),
+async def report_user(username: str, report_type: ReportType, description: str, reporter=Depends(get_current_user),
                       db=Depends(get_db)):
     """
     Endpoint to report a user.
@@ -128,21 +117,21 @@ async def report_user(username: str, report_type: ReportType, description: str, 
     Args:
         username (str): The username of the user to report.
         report_type (ReportType): The type of report.
-        user (UserInDB, optional): The user object of the currently logged-in user. Defaults to Depends on get_current_user.
+        reporter: The user object of the currently logged-in user.
         db: The database connection object.
+        description (str): The description of the report.
 
     Returns:
-        dict: A dictionary containing the status of the report.
-
-    Raises:
-        HTTPException: If the user is not found.
+        dict: A dictionary containing the status of the report if successful, else an error message.
     """
+    if len(description) > 1000:
+        return {"status": "error", "reason": "Description must be less than 1000 characters."}
 
     user = await db['users'].find_one({"username": username})
     if not user:
-        return {"error": "User not found."}
+        return {"status": "error", "reason": "User not found."}
 
     await db['reports'].insert_one(
-        {"username": username, "reporter": user["username"], "report_type": report_type.value,
+        {"username": username, "reporter": reporter.username, "report_type": report_type.value,
          "description": description})
     return {"status": "success."}

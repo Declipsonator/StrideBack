@@ -11,16 +11,20 @@ import os
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
+client = AsyncIOMotorClient(os.environ['MONGO'])
+if os.environ['DEVELOPMENT'].lower() == 'true':
+    db = client['test-db']
+else:
+    db = client['app-db']
+db = client['test-db'] if os.environ['DEVELOPMENT'].lower() == 'true' else client['app-db']
+
 
 # Function to get MongoDB database
-async def get_db():
+def get_db():
     """
     Connects to the MongoDB database and returns the database object.
 
     Returns:
         AsyncIOMotorClient: The MongoDB database object.
     """
-    client = AsyncIOMotorClient(os.environ['MONGO'])
-    if os.environ['DEVELOPMENT'].lower() == 'true':
-        return client['test-db']
-    return client['app-db']
+    return db
